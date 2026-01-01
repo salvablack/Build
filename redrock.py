@@ -1,169 +1,276 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import io
-import base64
-from PIL import Image
+import plotly.express as px
+import plotly.io as pio
 
-# Configuración inicial de la página para un look profesional
-st.set_page_config(
-    page_title="R E D R O C K",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+from io import BytesIO
+import tempfile
+import os
+
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Table,
+    TableStyle,
+    Spacer,
+    PageBreak,
+    Image
+)
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+
+from csv_engine import process_csv
+
+
+# ================= CONFIG =================
+st.set_page_config(page_title="R E D R O C K", layout="wide")
+
+st.title("🟥 R E D R O C K")
+st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos")
+
+
+# ================= STATE =================
+if "filters" not in st.session_state:
+    st.session_state.filters = []
+
+
+# ================= SIDEBAR =================
+st.sidebar.header("Configuración")
+
+uploaded_file = st.sidebar.file_uploader("Cargar archivo CSV", type=["csv"])
+
+if not uploaded_file:
+    st.info("👈 Carga un archivo CSV para comenzar")
+    st.stop()
+
+with open("temp.csv", "wb") as f:
+    f.write(uploaded_file.getbuffer())
+
+
+# ================= PROCESS =================
+with st.spinner("Procesando datos..."):
+    preview_df, df = process_csv("temp.csv", st.session_state.filters)
+
+
+# ================= COLUMN SELECTION =================
+st.sidebar.subheader("Columnas")
+
+selected_columns = st.sidebar.multiselect(
+    "Selecciona columnas",
+    df.columns.tolist(),
+    default=df.columns.tolist()
 )
 
-# Estilos CSS personalizados para profesionalismo
-st.markdown("""
-    <style>
-    .main {background-color: #f0f2f6;}
-    .stButton>button {background-color: #4CAF50; color: white; border: none; padding: 10px 20px; text-align: center; font-size: 16px; border-radius: 5px;}
-    .stButton>button:hover {background-color: #45a049;}
-    .stDataFrame {border: 1px solid #ddd; border-radius: 5px; padding: 10px;}
-    .stAlert {border-radius: 5px;}
-    h1, h2, h3 {color: #333;}
-    </style>
-""", unsafe_allow_html=True)
+df = df[selected_columns]
 
-# Sidebar para navegación y opciones
-with st.sidebar:
-    st.image("https://via.placeholder.com/150x50?text=Logo+Empresa", use_column_width=True)  # Reemplaza con tu logo si tienes
-    st.title("Opciones de Análisis")
-    st.markdown("---")
-    st.info("Sube tu CSV y configura el análisis.")
-    
-    # Opciones dinámicas (se activan después de subir el archivo)
-    if 'df' in st.session_state:
-        df = st.session_state.df
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        cat_cols = df.select_dtypes(include=['object', 'category', 'datetime']).columns.tolist()
-        
-        st.subheader("Configura Pivot Table")
-        valor = st.selectbox("Columna de Valor (numérica)", numeric_cols, index=0 if numeric_cols else None)
-        indice = st.selectbox("Filas (Índice)", cat_cols, index=0 if cat_cols else None)
-        columna = st.selectbox("Columnas (opcional)", ['Ninguna'] + cat_cols, index=0)
-        agg_func = st.selectbox("Función de Agregación", ['sum', 'mean', 'count', 'min', 'max', 'std'], index=0)
-        
-        st.subheader("Configura Gráfica")
-        graph_type = st.selectbox("Tipo de Gráfica", ['Barra', 'Línea', 'Pastel', 'Dispersión', 'Heatmap'], index=0)
-        stacked = st.checkbox("Apilado (para barra/línea)", value=False)
 
-# Contenido principal
-st.title("🛠️ R E D R O C K")
-st.markdown("Sube tu archivo CSV para analizar datos, generar tablas pivot dinámicas y visualizaciones interactivas. Soporta análisis descriptivo, pivots personalizados y exportaciones.")
+# ================= FILTERS =================
+st.sidebar.subheader("Filtros")
 
-# Sección de subida de archivo
-uploaded_file = st.file_uploader("Selecciona o arrastra tu archivo CSV aquí", type=["csv"], help="Archivos CSV hasta 200MB. Asegúrate de que tenga encabezados.")
+with st.sidebar.expander("➕ Agregar filtro"):
+    f_col = st.selectbox("Columna", df.columns)
+    f_op = st.selectbox("Operador", ["=", "!=", ">", "<", ">=", "<=", "contiene"])
+    f_val = st.text_input("Valor")
 
-if uploaded_file is not None:
-    try:
-        # Leer el CSV y guardarlo en session_state para persistencia
-        df = pd.read_csv(uploaded_file)
-        st.session_state.df = df
-        st.success(f"✅ Archivo '{uploaded_file.name}' cargado exitosamente. Dimensiones: {df.shape[0]} filas × {df.shape[1]} columnas.")
-        
-        # Análisis básico automático
-        with st.expander("📊 Vista Previa y Análisis Básico", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("Vista Previa")
-                st.dataframe(df.head(10), use_container_width=True)
-            with col2:
-                st.subheader("Estadísticas Descriptivas")
-                st.dataframe(df.describe(), use_container_width=True)
-                
-            st.subheader("Información del DataFrame")
-            buffer = io.StringIO()
-            df.info(buf=buffer)
-            st.text(buffer.getvalue())
-        
-        # Procesamiento de fechas si aplica
-        date_cols = df.select_dtypes(include=['object']).columns[df.select_dtypes(include=['object']).apply(lambda col: pd.to_datetime(col, errors='coerce').notnull().all())].tolist()
-        if date_cols:
-            for col in date_cols:
-                df[col] = pd.to_datetime(df[col], errors='coerce')
-                df[f'{col}_Mes'] = df[col].dt.month
-                df[f'{col}_Año'] = df[col].dt.year
-            st.info(f"📅 Columnas de fechas detectadas y procesadas: {', '.join(date_cols)}")
-        
-        # Generar Pivot Table basado en selecciones de sidebar
-        if 'valor' in locals() and valor and indice:
-            try:
-                pivot_params = {
-                    'values': valor,
-                    'index': indice,
-                    'aggfunc': agg_func,
-                    'fill_value': 0
-                }
-                if columna != 'Ninguna':
-                    pivot_params['columns'] = columna
-                
-                pivot_table = pd.pivot_table(df, **pivot_params)
-                
-                st.subheader("🔄 Tabla Pivot Generada")
-                st.dataframe(pivot_table, use_container_width=True)
-                
-                # Exportar pivot a CSV
-                csv = pivot_table.to_csv().encode('utf-8')
-                st.download_button(
-                    label="📥 Descargar Pivot como CSV",
-                    data=csv,
-                    file_name="pivot_table.csv",
-                    mime="text/csv"
-                )
-                
-                # Generar Gráfica
-                st.subheader("📈 Gráfica Basada en la Pivot")
-                fig, ax = plt.subplots(figsize=(12, 6))
-                sns.set(style="whitegrid")
-                
-                if graph_type == 'Barra':
-                    if columna != 'Ninguna':
-                        pivot_table.plot(kind='bar', stacked=stacked, ax=ax)
-                    else:
-                        sns.barplot(data=pivot_table.reset_index(), x=indice, y=valor, ax=ax)
-                elif graph_type == 'Línea':
-                    pivot_table.plot(kind='line', marker='o', ax=ax)
-                elif graph_type == 'Pastel':
-                    if columna == 'Ninguna':
-                        pivot_table.plot(kind='pie', y=valor, ax=ax, autopct='%1.1f%%')
-                    else:
-                        st.warning("Pastel no soporta columnas múltiples.")
-                elif graph_type == 'Dispersión':
-                    if len(pivot_table.columns) >= 2:
-                        sns.scatterplot(data=pivot_table.reset_index(), x=pivot_table.columns[0], y=pivot_table.columns[1], ax=ax)
-                    else:
-                        st.warning("Dispersión requiere al menos dos columnas numéricas.")
-                elif graph_type == 'Heatmap':
-                    sns.heatmap(pivot_table, annot=True, cmap='YlGnBu', ax=ax)
-                
-                ax.set_title(f"{graph_type} de {valor} por {indice}" + (f" y {columna}" if columna != 'Ninguna' else ""))
-                ax.set_xlabel(indice)
-                ax.set_ylabel(valor)
-                plt.xticks(rotation=45)
-                plt.tight_layout()
-                
-                st.pyplot(fig)
-                
-                # Exportar gráfica como PNG
-                buf = io.BytesIO()
-                fig.savefig(buf, format="png")
-                buf.seek(0)
-                st.download_button(
-                    label="🖼️ Descargar Gráfica como PNG",
-                    data=buf,
-                    file_name="grafica.png",
-                    mime="image/png"
-                )
-            except Exception as e:
-                st.error(f"❌ Error al generar pivot o gráfica: {str(e)}. Verifica las selecciones.")
-        
-    except Exception as e:
-        st.error(f"❌ Error al leer el archivo: {str(e)}. Asegúrate de que sea un CSV válido.")
+    if st.button("Agregar filtro"):
+        st.session_state.filters.append((f_col, f_op, f_val))
+        st.rerun()
+
+if st.session_state.filters:
+    st.sidebar.markdown("### Filtros activos")
+    for i, f in enumerate(st.session_state.filters):
+        st.sidebar.write(f"{i+1}. {f[0]} {f[1]} {f[2]}")
+
+    if st.sidebar.button("🧹 Limpiar filtros"):
+        st.session_state.filters = []
+        st.rerun()
+
+
+# ================= METRICS & GROUP =================
+st.sidebar.subheader("Análisis")
+
+group_col = st.sidebar.selectbox(
+    "Agrupar por (opcional)",
+    ["— Ninguno —"] + df.columns.tolist()
+)
+
+metric_col = st.sidebar.selectbox("Columna métrica", df.columns)
+
+metric_op = st.sidebar.selectbox(
+    "Operación",
+    ["Conteo", "Suma", "Promedio", "Mínimo", "Máximo"]
+)
+
+
+# ================= CALCULATIONS =================
+grouped_df = None
+metric_value = None
+
+agg_map = {
+    "Conteo": "count",
+    "Suma": "sum",
+    "Promedio": "mean",
+    "Mínimo": "min",
+    "Máximo": "max"
+}
+
+if group_col != "— Ninguno —":
+    grouped_df = (
+        df.groupby(group_col)[metric_col]
+        .agg(agg_map[metric_op])
+        .reset_index()
+        .rename(columns={metric_col: metric_op})
+        .sort_values(by=metric_op, ascending=False)
+    )
 else:
-    st.info("👆 Sube un archivo CSV para comenzar el análisis.")
+    s = df[metric_col]
+    if metric_op == "Conteo":
+        metric_value = len(s)
+    elif metric_op == "Suma":
+        metric_value = s.sum()
+    elif metric_op == "Promedio":
+        metric_value = s.mean()
+    elif metric_op == "Mínimo":
+        metric_value = s.min()
+    elif metric_op == "Máximo":
+        metric_value = s.max()
 
-# Pie de página
-st.markdown("---")
-st.caption("Desarrollado con Streamlit | Versión 1.0 | © 2025 Tu Empresa")
+
+# ================= PREVIEW =================
+c1, c2 = st.columns(2)
+
+with c1:
+    st.subheader("Vista previa (10 filas)")
+    st.dataframe(preview_df, use_container_width=True)
+
+with c2:
+    st.subheader("Resultado")
+    if grouped_df is None:
+        st.metric(f"{metric_op} · {metric_col}", metric_value)
+    else:
+        st.write("Resultado por grupo")
+
+
+# ================= GRAPH =================
+st.subheader("Gráfico")
+
+if grouped_df is not None:
+    fig = px.bar(
+        grouped_df,
+        x=group_col,
+        y=metric_op,
+        title=f"{metric_op} de {metric_col} por {group_col}"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ================= TABLES =================
+if grouped_df is not None:
+    st.subheader("Tabla agrupada")
+    st.dataframe(grouped_df, use_container_width=True)
+
+st.subheader("Datos filtrados")
+st.dataframe(df, use_container_width=True)
+
+
+# ================= EXPORT =================
+st.subheader("Exportar resultados")
+
+
+# ---------- PDF HELPERS ----------
+def footer(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica", 9)
+    canvas.setFillColor(colors.grey)
+    canvas.drawCentredString(A4[0] / 2, 1.5 * cm, "Generated by RedRock 2026")
+    canvas.restoreState()
+
+
+def metrics_table(df):
+    return [
+        ["Métrica", "Valor"],
+        ["Filas filtradas", len(df)],
+        ["Columnas", df.shape[1]],
+        ["Valores nulos", int(df.isnull().sum().sum())],
+        ["Duplicados", int(df.duplicated().sum())],
+    ]
+
+
+def df_to_table(df, title):
+    styles = getSampleStyleSheet()
+    elements = [
+        Paragraph(title, styles["Heading2"]),
+        Spacer(1, 10)
+    ]
+
+    data = [df.columns.tolist()] + df.values.tolist()
+    table = Table(data, repeatRows=1)
+
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]))
+
+    elements.append(table)
+    elements.append(PageBreak())
+    return elements
+
+
+def plot_to_image(grouped_df):
+    if grouped_df is None:
+        return None
+
+    fig = px.bar(grouped_df, x=group_col, y=metric_op)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    pio.write_image(fig, tmp.name, width=900, height=500)
+    return tmp.name
+
+
+def generate_pdf(filtered_df, grouped_df):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph("R E D R O C K – Data Report", styles["Title"]))
+    elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph("General Metrics", styles["Heading2"]))
+    elements.append(Table(metrics_table(filtered_df), colWidths=[7*cm, 7*cm]))
+    elements.append(PageBreak())
+
+    img = plot_to_image(grouped_df)
+    if img:
+        elements.append(Paragraph("Graph Analysis", styles["Heading2"]))
+        elements.append(Image(img, width=16*cm, height=9*cm))
+        elements.append(PageBreak())
+
+    if grouped_df is not None:
+        elements += df_to_table(grouped_df, "Grouped Results (Descending Order)")
+
+    elements += df_to_table(filtered_df, "Filtered Data")
+
+    doc.build(elements, onFirstPage=footer, onLaterPages=footer)
+    buffer.seek(0)
+
+    if img:
+        os.remove(img)
+
+    return buffer
+
+
+# ---------- PDF BUTTON ----------
+if st.button("⬇ Exportar PDF profesional"):
+    pdf = generate_pdf(df, grouped_df)
+    st.download_button(
+        "Descargar PDF",
+        pdf,
+        "redrock_reporte_profesional.pdf",
+        "application/pdf"
+    )
