@@ -21,7 +21,7 @@ from csv_engine import process_csv
 # ================= CONFIG =================
 st.set_page_config(page_title="R E D R O C K", layout="wide")
 st.title("🟥 R E D R O C K")
-st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos")
+st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos y más")
 
 # ================= STATE =================
 if "filters" not in st.session_state:
@@ -264,4 +264,5 @@ if st.button("⬇ Exportar PDF profesional"):
         "redrock_reporte.pdf",
         mime="application/pdf"
     )
+
 
