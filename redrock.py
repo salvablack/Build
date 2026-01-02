@@ -31,7 +31,7 @@ if "filters" not in st.session_state:
 st.sidebar.header("Configuración")
 uploaded_file = st.sidebar.file_uploader("Cargar archivo CSV", type=["csv"])
 
-if not uploaded_file:
+if uploaded_file is None:
     st.info("👈 Carga un archivo CSV para comenzar")
     st.stop()
 
@@ -41,24 +41,32 @@ with open(temp_path, "wb") as f:
 
 # ================= PROCESS =================
 with st.spinner("Procesando datos..."):
-    preview_df, df_original = process_csv(temp_path, st.session_state.filters)
+    preview_df, df_original = process_csv(
+        temp_path,
+        st.session_state.filters
+    )
 
-# ================= COLUMN SELECTION =================
-st.sidebar.subheader("Columnas a mostrar")
-selected_columns = st.sidebar.multiselect(
-    "Selecciona las columnas visibles",
+# ================= COLUMN VISIBILITY =================
+st.sidebar.subheader("Columnas visibles (solo visual)")
+visible_columns = st.sidebar.multiselect(
+    "Selecciona columnas",
     df_original.columns.tolist(),
     default=df_original.columns.tolist()
 )
 
-df_display = df_original[selected_columns].copy()
+df_display = df_original[visible_columns].copy()
 
 # ================= FILTERS =================
 st.sidebar.subheader("Filtros")
+
 with st.sidebar.expander("➕ Agregar filtro"):
     f_col = st.selectbox("Columna", df_original.columns)
-    f_op = st.selectbox("Operador", ["=", "!=", ">", "<", ">=", "<=", "contiene"])
+    f_op = st.selectbox(
+        "Operador",
+        ["=", "!=", ">", "<", ">=", "<=", "contiene"]
+    )
     f_val = st.text_input("Valor")
+
     if st.button("Agregar filtro"):
         st.session_state.filters.append((f_col, f_op, f_val))
         st.rerun()
@@ -66,13 +74,13 @@ with st.sidebar.expander("➕ Agregar filtro"):
 if st.session_state.filters:
     st.sidebar.markdown("### Filtros activos")
     for i, f in enumerate(st.session_state.filters):
-        col1, col2 = st.sidebar.columns([4, 1])
-        col1.write(f"{i+1}. {f[0]} {f[1]} {f[2]}")
-        if col2.button("✕", key=f"del_filter_{i}"):
+        c1, c2 = st.sidebar.columns([4, 1])
+        c1.write(f"{i+1}. {f[0]} {f[1]} {f[2]}")
+        if c2.button("✕", key=f"del_filter_{i}"):
             st.session_state.filters.pop(i)
             st.rerun()
 
-# ================= ANÁLISIS =================
+# ================= ANALYSIS =================
 st.sidebar.subheader("Análisis")
 
 group_col = st.sidebar.selectbox(
@@ -82,7 +90,7 @@ group_col = st.sidebar.selectbox(
 
 metric_col = st.sidebar.selectbox(
     "Columna métrica",
-    df_original.columns
+    df_original.columns.tolist()
 )
 
 metric_op_label = st.sidebar.selectbox(
@@ -97,13 +105,17 @@ agg_map = {
     "Mínimo": "min",
     "Máximo": "max"
 }
+
 agg_func = agg_map[metric_op_label]
 
-# ================= CÁLCULOS =================
-df_calc = df_display.copy()
+# ================= DATAFRAMES CORRECTOS =================
+# 🔑 df_calc SIEMPRE usa el dataframe completo
+df_calc = df_original.copy()
+
 grouped_df = None
 metric_value = None
 
+# ================= CALCULATIONS =================
 if group_col != "— Ninguno —":
     try:
         grouped_df = (
@@ -112,32 +124,43 @@ if group_col != "— Ninguno —":
             .agg(agg_func)
             .reset_index()
             .rename(columns={metric_col: metric_op_label})
-            .sort_values(by=metric_op_label, ascending=False)
+            .sort_values(metric_op_label, ascending=False)
+            .reset_index(drop=True)
         )
     except Exception as e:
         st.error(f"Error al agrupar: {e}")
+
 else:
     s = df_calc[metric_col]
     if metric_op_label == "Conteo":
-        metric_value = len(s)
+        metric_value = int(s.count())
     elif metric_op_label == "Suma":
-        metric_value = s.sum()
+        metric_value = float(s.sum())
     elif metric_op_label == "Promedio":
-        metric_value = s.mean()
+        metric_value = float(s.mean())
     elif metric_op_label == "Mínimo":
-        metric_value = s.min()
+        metric_value = float(s.min())
     elif metric_op_label == "Máximo":
-        metric_value = s.max()
+        metric_value = float(s.max())
 
-# ================= VISUAL =================
-st.subheader("Resultado")
+# ================= UI OUTPUT =================
+c1, c2 = st.columns(2)
 
-if grouped_df is not None:
-    st.dataframe(grouped_df, use_container_width=True)
-else:
-    st.metric(metric_op_label, metric_value)
+with c1:
+    st.subheader("Vista previa")
+    st.dataframe(preview_df.head(10), use_container_width=True)
 
-# ================= GRÁFICO (PLOTLY SOLO UI) =================
+with c2:
+    st.subheader("Resultado")
+    if grouped_df is not None:
+        st.dataframe(grouped_df, use_container_width=True)
+    else:
+        st.metric(
+            f"{metric_op_label} de {metric_col}",
+            metric_value
+        )
+
+# ================= PLOTLY (UI ONLY) =================
 st.subheader("Gráfico interactivo")
 
 if grouped_df is not None and not grouped_df.empty:
@@ -163,15 +186,15 @@ def footer(canvas, doc):
         "Generated by RedRock 2026"
     )
 
-def plot_to_png_matplotlib(df, group_col, metric_col):
+def plot_to_png_matplotlib(df):
     if df is None or df.empty:
         return None
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
 
     plt.figure(figsize=(10, 5))
-    plt.bar(df[group_col].astype(str), df[metric_col])
-    plt.title(f"{metric_col} por {group_col}")
+    plt.bar(df[group_col].astype(str), df[metric_op_label])
+    plt.title(f"{metric_op_label} por {group_col}")
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
     plt.savefig(tmp.name, dpi=150)
@@ -187,14 +210,14 @@ def df_to_table(data_df, title):
     ]
 
     data = [data_df.columns.tolist()] + data_df.values.tolist()
-    table = Table(data, repeatRows=1)
 
+    table = Table(data, repeatRows=1)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.black),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('FONTSIZE', (0,0), (-1,-1), 8),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
     ]))
 
     elements.append(table)
@@ -203,11 +226,12 @@ def df_to_table(data_df, title):
 
 def generate_pdf():
     buffer = BytesIO()
+
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        topMargin=2*cm,
-        bottomMargin=2*cm
+        topMargin=2 * cm,
+        bottomMargin=2 * cm
     )
 
     styles = getSampleStyleSheet()
@@ -218,26 +242,35 @@ def generate_pdf():
     )
     elements.append(Spacer(1, 20))
 
-    img_path = plot_to_png_matplotlib(
-        grouped_df, group_col, metric_op_label
-    )
+    img_path = plot_to_png_matplotlib(grouped_df)
 
     if img_path:
         elements.append(
             Paragraph("Análisis Gráfico", styles["Heading2"])
         )
         elements.append(
-            Image(img_path, width=16*cm, height=8*cm)
+            Image(img_path, width=16 * cm, height=8 * cm)
         )
         elements.append(PageBreak())
         os.unlink(img_path)
 
     if grouped_df is not None:
         elements += df_to_table(
-            grouped_df, "Resultados Agrupados"
+            grouped_df,
+            "Resultados Agrupados"
         )
 
-    doc.build(elements, onFirstPage=footer, onLaterPages=footer)
+    elements += df_to_table(
+        df_display,
+        "Datos Filtrados y Visibles"
+    )
+
+    doc.build(
+        elements,
+        onFirstPage=footer,
+        onLaterPages=footer
+    )
+
     buffer.seek(0)
     return buffer
 
@@ -249,9 +282,9 @@ if st.button("⬇ Exportar PDF profesional"):
         pdf_buffer = generate_pdf()
 
     st.download_button(
-        label="Descargar PDF",
-        data=pdf_buffer,
-        file_name="redrock_reporte.pdf",
+        "Descargar PDF",
+        pdf_buffer,
+        "redrock_reporte.pdf",
         mime="application/pdf"
     )
 
