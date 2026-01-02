@@ -21,7 +21,7 @@ from csv_engine import process_csv
 # ================= CONFIG =================
 st.set_page_config(page_title="R E D R O C K", layout="wide")
 st.title("🟥 R E D R O C K")
-st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos")
+st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos y mucho más")
 
 # ================= STATE =================
 if "filters" not in st.session_state:
@@ -39,28 +39,28 @@ temp_path = "temp_uploaded.csv"
 with open(temp_path, "wb") as f:
     f.write(uploaded_file.getbuffer())
 
-# ================= PROCESS =================
+# ================= PROCESS (FUENTE ÚNICA DE VERDAD) =================
 with st.spinner("Procesando datos..."):
-    preview_df, df_original = process_csv(
+    preview_df, df_filtered = process_csv(
         temp_path,
         st.session_state.filters
     )
 
-# ================= COLUMN VISIBILITY =================
+# ================= COLUMN VISIBILITY (SOLO UI) =================
 st.sidebar.subheader("Columnas visibles")
 visible_columns = st.sidebar.multiselect(
     "Selecciona columnas",
-    df_original.columns.tolist(),
-    default=df_original.columns.tolist()
+    df_filtered.columns.tolist(),
+    default=df_filtered.columns.tolist()
 )
 
-df_display = df_original[visible_columns].copy()
+df_display = df_filtered[visible_columns].copy()
 
 # ================= FILTERS =================
 st.sidebar.subheader("Filtros")
 
 with st.sidebar.expander("➕ Agregar filtro"):
-    f_col = st.selectbox("Columna", df_original.columns)
+    f_col = st.selectbox("Columna", df_filtered.columns)
     f_op = st.selectbox(
         "Operador",
         ["=", "!=", ">", "<", ">=", "<=", "contiene"]
@@ -85,12 +85,12 @@ st.sidebar.subheader("Análisis")
 
 group_col = st.sidebar.selectbox(
     "Agrupar por",
-    ["— Ninguno —"] + df_original.columns.tolist()
+    ["— Ninguno —"] + df_filtered.columns.tolist()
 )
 
 metric_col = st.sidebar.selectbox(
     "Columna métrica",
-    df_original.columns.tolist()
+    df_filtered.columns.tolist()
 )
 
 metric_op_label = st.sidebar.selectbox(
@@ -105,11 +105,11 @@ agg_map = {
     "Mínimo": "min",
     "Máximo": "max"
 }
-
 agg_func = agg_map[metric_op_label]
 
-# ================= DATA =================
-df_calc = df_original.copy()
+# ================= CÁLCULOS (SIEMPRE SOBRE df_filtered) =================
+df_calc = df_filtered.copy()
+
 grouped_df = None
 metric_value = None
 
@@ -121,6 +121,7 @@ if group_col != "— Ninguno —":
         .reset_index()
         .rename(columns={metric_col: metric_op_label})
         .sort_values(metric_op_label, ascending=False)
+        .reset_index(drop=True)
     )
 else:
     s = df_calc[metric_col]
@@ -142,7 +143,7 @@ if grouped_df is not None:
 else:
     st.metric(metric_op_label, metric_value)
 
-# ================= PLOTLY =================
+# ================= GRÁFICO INTERACTIVO (PLOTLY) =================
 st.subheader("Gráfico")
 
 if grouped_df is not None and not grouped_df.empty:
@@ -156,8 +157,9 @@ if grouped_df is not None and not grouped_df.empty:
     st.plotly_chart(fig, use_container_width=True)
 else:
     fig = None
+    st.info("No hay datos agrupados para el gráfico.")
 
-# ✅ TABLA QUE FALTABA
+# ================= TABLA FILTRADA (VISIBLE) =================
 st.subheader("Datos filtrados y columnas visibles")
 st.dataframe(df_display, use_container_width=True)
 
@@ -179,8 +181,8 @@ def plot_to_png_matplotlib(df):
 
     plt.figure(figsize=(10, 5))
     plt.bar(df[group_col].astype(str), df[metric_op_label])
-    plt.xticks(rotation=45, ha="right")
     plt.title(f"{metric_op_label} por {group_col}")
+    plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
     plt.savefig(tmp.name, dpi=150)
     plt.close()
@@ -241,7 +243,6 @@ def generate_pdf():
 
     doc.build(elements, onFirstPage=footer, onLaterPages=footer)
 
-    # 🔑 LIMPIEZA DESPUÉS del build
     for img in tmp_images:
         try:
             os.unlink(img)
@@ -252,7 +253,7 @@ def generate_pdf():
     return buffer
 
 # ================= EXPORT =================
-st.subheader("Exportar")
+st.subheader("Exportar resultados")
 
 if st.button("⬇ Exportar PDF profesional"):
     with st.spinner("Generando PDF..."):
