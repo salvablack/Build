@@ -278,3 +278,7 @@ if st.button("⬇ Exportar PDF profesional"):
         mime="application/pdf"
     )
 
+
+# Pie de página
+st.markdown("---")
+st.caption("Desarrollado con Streamlit | Versión 1.0 | © 2026 Salva Rosales")
