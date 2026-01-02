@@ -47,7 +47,7 @@ with st.spinner("Procesando datos..."):
     )
 
 # ================= COLUMN VISIBILITY =================
-st.sidebar.subheader("Columnas visibles (solo visual)")
+st.sidebar.subheader("Columnas visibles")
 visible_columns = st.sidebar.multiselect(
     "Selecciona columnas",
     df_original.columns.tolist(),
@@ -108,60 +108,42 @@ agg_map = {
 
 agg_func = agg_map[metric_op_label]
 
-# ================= DATAFRAMES CORRECTOS =================
-# 🔑 df_calc SIEMPRE usa el dataframe completo
+# ================= DATA =================
 df_calc = df_original.copy()
-
 grouped_df = None
 metric_value = None
 
-# ================= CALCULATIONS =================
 if group_col != "— Ninguno —":
-    try:
-        grouped_df = (
-            df_calc
-            .groupby(group_col, observed=True)[metric_col]
-            .agg(agg_func)
-            .reset_index()
-            .rename(columns={metric_col: metric_op_label})
-            .sort_values(metric_op_label, ascending=False)
-            .reset_index(drop=True)
-        )
-    except Exception as e:
-        st.error(f"Error al agrupar: {e}")
-
+    grouped_df = (
+        df_calc
+        .groupby(group_col, observed=True)[metric_col]
+        .agg(agg_func)
+        .reset_index()
+        .rename(columns={metric_col: metric_op_label})
+        .sort_values(metric_op_label, ascending=False)
+    )
 else:
     s = df_calc[metric_col]
-    if metric_op_label == "Conteo":
-        metric_value = int(s.count())
-    elif metric_op_label == "Suma":
-        metric_value = float(s.sum())
-    elif metric_op_label == "Promedio":
-        metric_value = float(s.mean())
-    elif metric_op_label == "Mínimo":
-        metric_value = float(s.min())
-    elif metric_op_label == "Máximo":
-        metric_value = float(s.max())
+    metric_value = {
+        "Conteo": int(s.count()),
+        "Suma": float(s.sum()),
+        "Promedio": float(s.mean()),
+        "Mínimo": float(s.min()),
+        "Máximo": float(s.max()),
+    }[metric_op_label]
 
-# ================= UI OUTPUT =================
-c1, c2 = st.columns(2)
+# ================= UI =================
+st.subheader("Vista previa")
+st.dataframe(preview_df.head(10), use_container_width=True)
 
-with c1:
-    st.subheader("Vista previa")
-    st.dataframe(preview_df.head(10), use_container_width=True)
+st.subheader("Resultado")
+if grouped_df is not None:
+    st.dataframe(grouped_df, use_container_width=True)
+else:
+    st.metric(metric_op_label, metric_value)
 
-with c2:
-    st.subheader("Resultado")
-    if grouped_df is not None:
-        st.dataframe(grouped_df, use_container_width=True)
-    else:
-        st.metric(
-            f"{metric_op_label} de {metric_col}",
-            metric_value
-        )
-
-# ================= PLOTLY (UI ONLY) =================
-st.subheader("Gráfico interactivo")
+# ================= PLOTLY =================
+st.subheader("Gráfico")
 
 if grouped_df is not None and not grouped_df.empty:
     fig = px.bar(
@@ -174,9 +156,12 @@ if grouped_df is not None and not grouped_df.empty:
     st.plotly_chart(fig, use_container_width=True)
 else:
     fig = None
-    st.info("No hay datos agrupados para el gráfico.")
 
-# ================= PDF HELPERS =================
+# ✅ TABLA QUE FALTABA
+st.subheader("Datos filtrados y columnas visibles")
+st.dataframe(df_display, use_container_width=True)
+
+# ================= PDF =================
 def footer(canvas, doc):
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(colors.grey)
@@ -194,8 +179,8 @@ def plot_to_png_matplotlib(df):
 
     plt.figure(figsize=(10, 5))
     plt.bar(df[group_col].astype(str), df[metric_op_label])
-    plt.title(f"{metric_op_label} por {group_col}")
     plt.xticks(rotation=45, ha="right")
+    plt.title(f"{metric_op_label} por {group_col}")
     plt.tight_layout()
     plt.savefig(tmp.name, dpi=150)
     plt.close()
@@ -210,7 +195,6 @@ def df_to_table(data_df, title):
     ]
 
     data = [data_df.columns.tolist()] + data_df.values.tolist()
-
     table = Table(data, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.black),
@@ -226,6 +210,7 @@ def df_to_table(data_df, title):
 
 def generate_pdf():
     buffer = BytesIO()
+    tmp_images = []
 
     doc = SimpleDocTemplate(
         buffer,
@@ -243,39 +228,31 @@ def generate_pdf():
     elements.append(Spacer(1, 20))
 
     img_path = plot_to_png_matplotlib(grouped_df)
-
     if img_path:
-        elements.append(
-            Paragraph("Análisis Gráfico", styles["Heading2"])
-        )
-        elements.append(
-            Image(img_path, width=16 * cm, height=8 * cm)
-        )
+        tmp_images.append(img_path)
+        elements.append(Paragraph("Análisis Gráfico", styles["Heading2"]))
+        elements.append(Image(img_path, width=16 * cm, height=8 * cm))
         elements.append(PageBreak())
-        os.unlink(img_path)
 
     if grouped_df is not None:
-        elements += df_to_table(
-            grouped_df,
-            "Resultados Agrupados"
-        )
+        elements += df_to_table(grouped_df, "Resultados Agrupados")
 
-    elements += df_to_table(
-        df_display,
-        "Datos Filtrados y Visibles"
-    )
+    elements += df_to_table(df_display, "Datos Filtrados")
 
-    doc.build(
-        elements,
-        onFirstPage=footer,
-        onLaterPages=footer
-    )
+    doc.build(elements, onFirstPage=footer, onLaterPages=footer)
+
+    # 🔑 LIMPIEZA DESPUÉS del build
+    for img in tmp_images:
+        try:
+            os.unlink(img)
+        except:
+            pass
 
     buffer.seek(0)
     return buffer
 
 # ================= EXPORT =================
-st.subheader("Exportar resultados")
+st.subheader("Exportar")
 
 if st.button("⬇ Exportar PDF profesional"):
     with st.spinner("Generando PDF..."):
@@ -287,13 +264,4 @@ if st.button("⬇ Exportar PDF profesional"):
         "redrock_reporte.pdf",
         mime="application/pdf"
     )
-
-# ================= CLEANUP =================
-if os.path.exists(temp_path):
-    try:
-        os.remove(temp_path)
-    except:
-        pass
-
-
 
