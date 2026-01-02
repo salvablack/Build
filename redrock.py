@@ -1,79 +1,65 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.io as pio
-
 from io import BytesIO
 import tempfile
 import os
 
 from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Table,
-    TableStyle,
-    Spacer,
-    PageBreak,
-    Image
+    SimpleDocTemplate, Paragraph, Table, TableStyle,
+    Spacer, PageBreak
 )
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 
-from csv_engine import process_csv
+from svglib.svglib import svg2rlg
+from reportlab.graphics import renderPDF
 
+from csv_engine import process_csv
 
 # ================= CONFIG =================
 st.set_page_config(page_title="R E D R O C K", layout="wide")
-
 st.title("🟥 R E D R O C K")
 st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos")
-
 
 # ================= STATE =================
 if "filters" not in st.session_state:
     st.session_state.filters = []
 
-
 # ================= SIDEBAR =================
 st.sidebar.header("Configuración")
-
 uploaded_file = st.sidebar.file_uploader("Cargar archivo CSV", type=["csv"])
 
 if not uploaded_file:
     st.info("👈 Carga un archivo CSV para comenzar")
     st.stop()
 
-with open("temp.csv", "wb") as f:
+temp_path = "temp_uploaded.csv"
+with open(temp_path, "wb") as f:
     f.write(uploaded_file.getbuffer())
-
 
 # ================= PROCESS =================
 with st.spinner("Procesando datos..."):
-    preview_df, df = process_csv("temp.csv", st.session_state.filters)
-
+    preview_df, df_original = process_csv(temp_path, st.session_state.filters)
 
 # ================= COLUMN SELECTION =================
-st.sidebar.subheader("Columnas")
-
+st.sidebar.subheader("Columnas a mostrar")
 selected_columns = st.sidebar.multiselect(
-    "Selecciona columnas",
-    df.columns.tolist(),
-    default=df.columns.tolist()
+    "Selecciona las columnas visibles",
+    df_original.columns.tolist(),
+    default=df_original.columns.tolist()
 )
 
-df = df[selected_columns]
-
+df_display = df_original[selected_columns].copy()
 
 # ================= FILTERS =================
 st.sidebar.subheader("Filtros")
-
 with st.sidebar.expander("➕ Agregar filtro"):
-    f_col = st.selectbox("Columna", df.columns)
+    f_col = st.selectbox("Columna", df_original.columns)
     f_op = st.selectbox("Operador", ["=", "!=", ">", "<", ">=", "<=", "contiene"])
     f_val = st.text_input("Valor")
-
     if st.button("Agregar filtro"):
         st.session_state.filters.append((f_col, f_op, f_val))
         st.rerun()
@@ -81,32 +67,29 @@ with st.sidebar.expander("➕ Agregar filtro"):
 if st.session_state.filters:
     st.sidebar.markdown("### Filtros activos")
     for i, f in enumerate(st.session_state.filters):
-        st.sidebar.write(f"{i+1}. {f[0]} {f[1]} {f[2]}")
+        col1, col2 = st.sidebar.columns([4, 1])
+        col1.write(f"{i+1}. {f[0]} {f[1]} {f[2]}")
+        if col2.button("✕", key=f"del_{i}"):
+            st.session_state.filters.pop(i)
+            st.rerun()
 
-    if st.sidebar.button("🧹 Limpiar filtros"):
-        st.session_state.filters = []
-        st.rerun()
-
-
-# ================= METRICS & GROUP =================
+# ================= ANÁLISIS =================
 st.sidebar.subheader("Análisis")
 
 group_col = st.sidebar.selectbox(
-    "Agrupar por (opcional)",
-    ["— Ninguno —"] + df.columns.tolist()
+    "Agrupar por",
+    ["— Ninguno —"] + df_original.columns.tolist()
 )
 
-metric_col = st.sidebar.selectbox("Columna métrica", df.columns)
+metric_col = st.sidebar.selectbox(
+    "Columna métrica",
+    df_original.columns
+)
 
-metric_op = st.sidebar.selectbox(
+metric_op_label = st.sidebar.selectbox(
     "Operación",
     ["Conteo", "Suma", "Promedio", "Mínimo", "Máximo"]
 )
-
-
-# ================= CALCULATIONS =================
-grouped_df = None
-metric_value = None
 
 agg_map = {
     "Conteo": "count",
@@ -115,162 +98,121 @@ agg_map = {
     "Mínimo": "min",
     "Máximo": "max"
 }
+agg_func = agg_map[metric_op_label]
+
+# ================= CÁLCULOS =================
+df_calc = df_display.copy()
+grouped_df = None
+metric_value = None
 
 if group_col != "— Ninguno —":
     grouped_df = (
-        df.groupby(group_col)[metric_col]
-        .agg(agg_map[metric_op])
+        df_calc
+        .groupby(group_col, observed=True)[metric_col]
+        .agg(agg_func)
         .reset_index()
-        .rename(columns={metric_col: metric_op})
-        .sort_values(by=metric_op, ascending=False)
+        .rename(columns={metric_col: metric_op_label})
+        .sort_values(by=metric_op_label, ascending=False)
     )
 else:
-    s = df[metric_col]
-    if metric_op == "Conteo":
+    s = df_calc[metric_col]
+    if metric_op_label == "Conteo":
         metric_value = len(s)
-    elif metric_op == "Suma":
+    elif metric_op_label == "Suma":
         metric_value = s.sum()
-    elif metric_op == "Promedio":
+    elif metric_op_label == "Promedio":
         metric_value = s.mean()
-    elif metric_op == "Mínimo":
+    elif metric_op_label == "Mínimo":
         metric_value = s.min()
-    elif metric_op == "Máximo":
+    elif metric_op_label == "Máximo":
         metric_value = s.max()
 
-
-# ================= PREVIEW =================
-c1, c2 = st.columns(2)
-
-with c1:
-    st.subheader("Vista previa (10 filas)")
-    st.dataframe(preview_df, use_container_width=True)
-
-with c2:
-    st.subheader("Resultado")
-    if grouped_df is None:
-        st.metric(f"{metric_op} · {metric_col}", metric_value)
-    else:
-        st.write("Resultado por grupo")
-
-
-# ================= GRAPH =================
-st.subheader("Gráfico")
+# ================= VISUAL =================
+st.subheader("Resultado")
 
 if grouped_df is not None:
+    st.dataframe(grouped_df, use_container_width=True)
+else:
+    st.metric(metric_op_label, metric_value)
+
+# ================= GRÁFICO =================
+st.subheader("Gráfico")
+
+fig = None
+if grouped_df is not None and not grouped_df.empty:
     fig = px.bar(
         grouped_df,
         x=group_col,
-        y=metric_op,
-        title=f"{metric_op} de {metric_col} por {group_col}"
+        y=metric_op_label,
+        title=f"{metric_op_label} por {group_col}",
+        color_discrete_sequence=["#FF0000"]
     )
     st.plotly_chart(fig, use_container_width=True)
 
-
-# ================= TABLES =================
-if grouped_df is not None:
-    st.subheader("Tabla agrupada")
-    st.dataframe(grouped_df, use_container_width=True)
-
-st.subheader("Datos filtrados")
-st.dataframe(df, use_container_width=True)
-
-
-# ================= EXPORT =================
-st.subheader("Exportar resultados")
-
-
-# ---------- PDF HELPERS ----------
+# ================= PDF =================
 def footer(canvas, doc):
-    canvas.saveState()
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(colors.grey)
     canvas.drawCentredString(A4[0] / 2, 1.5 * cm, "Generated by RedRock 2026")
-    canvas.restoreState()
 
+def plot_to_svg():
+    if fig is None:
+        return None
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".svg")
+    fig.write_image(tmp.name, format="svg")
+    tmp.close()
+    return tmp.name
 
-def metrics_table(df):
-    return [
-        ["Métrica", "Valor"],
-        ["Filas filtradas", len(df)],
-        ["Columnas", df.shape[1]],
-        ["Valores nulos", int(df.isnull().sum().sum())],
-        ["Duplicados", int(df.duplicated().sum())],
-    ]
-
-
-def df_to_table(df, title):
+def df_to_table(data_df, title):
     styles = getSampleStyleSheet()
-    elements = [
-        Paragraph(title, styles["Heading2"]),
-        Spacer(1, 10)
-    ]
-
-    data = [df.columns.tolist()] + df.values.tolist()
+    elements = [Paragraph(title, styles["Heading2"]), Spacer(1, 12)]
+    data = [data_df.columns.tolist()] + data_df.values.tolist()
     table = Table(data, repeatRows=1)
-
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ('BACKGROUND', (0,0), (-1,0), colors.black),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
     ]))
-
     elements.append(table)
     elements.append(PageBreak())
     return elements
 
-
-def plot_to_image(grouped_df):
-    if grouped_df is None:
-        return None
-
-    fig = px.bar(grouped_df, x=group_col, y=metric_op)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-    pio.write_image(fig, tmp.name, width=900, height=500)
-    return tmp.name
-
-
-def generate_pdf(filtered_df, grouped_df):
+def generate_pdf():
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
-
     styles = getSampleStyleSheet()
     elements = []
 
-    elements.append(Paragraph("R E D R O C K – Data Report", styles["Title"]))
+    elements.append(Paragraph("R E D R O C K – Reporte de Datos", styles["Title"]))
     elements.append(Spacer(1, 20))
 
-    elements.append(Paragraph("General Metrics", styles["Heading2"]))
-    elements.append(Table(metrics_table(filtered_df), colWidths=[7*cm, 7*cm]))
-    elements.append(PageBreak())
-
-    img = plot_to_image(grouped_df)
-    if img:
-        elements.append(Paragraph("Graph Analysis", styles["Heading2"]))
-        elements.append(Image(img, width=16*cm, height=9*cm))
+    svg_path = plot_to_svg()
+    if svg_path:
+        drawing = svg2rlg(svg_path)
+        elements.append(Paragraph("Análisis Gráfico", styles["Heading2"]))
+        elements.append(drawing)
         elements.append(PageBreak())
+        os.unlink(svg_path)
 
     if grouped_df is not None:
-        elements += df_to_table(grouped_df, "Grouped Results (Descending Order)")
-
-    elements += df_to_table(filtered_df, "Filtered Data")
+        elements += df_to_table(grouped_df, "Resultados Agrupados")
 
     doc.build(elements, onFirstPage=footer, onLaterPages=footer)
     buffer.seek(0)
-
-    if img:
-        os.remove(img)
-
     return buffer
 
-
-# ---------- PDF BUTTON ----------
 if st.button("⬇ Exportar PDF profesional"):
-    pdf = generate_pdf(df, grouped_df)
+    pdf = generate_pdf()
     st.download_button(
         "Descargar PDF",
         pdf,
-        "redrock_reporte_profesional.pdf",
-        "application/pdf"
+        "redrock_reporte.pdf",
+        mime="application/pdf"
     )
+
+# ================= CLEANUP =================
+if os.path.exists(temp_path):
+    os.remove(temp_path)
+
