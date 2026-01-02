@@ -15,9 +15,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from csv_engine import process_csv
 
-st.markdown("---")
-st.caption("Desarrollado por RedRock| Versión 1.1 | © 2026 Salva Rosales")
-
 # ================= CONFIG =================
 st.set_page_config(page_title="R E D R O C K", layout="wide")
 st.title("🟥 R E D R O C K")
@@ -285,6 +282,7 @@ if st.button("⬇ Exportar PDF profesional"):
 # Pie de página
 st.markdown("---")
 st.caption("Desarrollado por RedRock| Versión 1.1 | © 2026 Salva Rosales")
+
 
 
 
