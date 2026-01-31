@@ -1,10 +1,10 @@
 streamlit
 pandas
 plotly
-kaleido
 matplotlib
 openpyxl
 reportlab
+
 
 
 
