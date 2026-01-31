@@ -17,7 +17,7 @@ from reportlab.lib.units import cm
 # ================= CONFIG =================
 st.set_page_config(page_title="R E D R O C K Technologies", layout="wide")
 st.title("🟥 R E D R O C K")
-st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos + Mucho más...")
+st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos y Mucho más...")
 REDROCK_RED = "#FF0000"
 
 # ================= STATE =================
@@ -311,6 +311,7 @@ if st.button("⬇ Generar PDF profesional"):
 # Pie de página
 st.markdown("---")
 st.caption("Desarrollado con Streamlit | Versión 2026.1 | © Salva Rosales")
+
 
 
 
