@@ -310,7 +310,8 @@ if st.button("⬇ Generar PDF profesional"):
 
 # Pie de página
 st.markdown("---")
-st.caption("Desarrollado con Streamlit | Versión 2026 | © Salva Rosales")
+st.caption("Desarrollado con Streamlit | Versión 2026.1 | © Salva Rosales")
+
 
 
 
