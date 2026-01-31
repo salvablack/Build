@@ -130,17 +130,17 @@ if st.session_state.filters:
 # ================= ANÁLISIS =================
 st.sidebar.subheader("Analize")
 group_col = st.sidebar.selectbox(
-    "Agrupar por",
+    "Group by",
     ["— Ninguno —"] + df_filtered.columns.tolist(),
     key="group_col"
 )
 metric_col = st.sidebar.selectbox(
-    "Columna métrica",
+    "Metric Column",
     df_filtered.columns.tolist(),
     key="metric_col"
 )
 metric_op_label = st.sidebar.selectbox(
-    "Operación",
+    "Run",
     ["Count", "Sum", "Mean", "Min", "Max"],
     key="metric_op"
 )
@@ -311,6 +311,7 @@ if st.button("⬇ Generate PDF"):
 # Pie de página
 st.markdown("---")
 st.caption("Desarrollado con Streamlit | Versión 2026.1 | © Salva Rosales")
+
 
 
 
