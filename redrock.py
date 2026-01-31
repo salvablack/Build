@@ -11,7 +11,7 @@ from reportlab.platypus import (
 )
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape   # ← agregado landscape
 from reportlab.lib.units import cm
 
 # ================= CONFIG =================
@@ -26,11 +26,21 @@ if "filters" not in st.session_state:
 
 # ================= SIDEBAR =================
 st.sidebar.header("Configuración")
-
 uploaded_file = st.sidebar.file_uploader(
     "Cargar archivo (CSV o Excel)",
     type=["csv", "xlsx", "xls"]
 )
+
+# Detección simple de cambio de archivo para limpiar caché
+if uploaded_file is not None:
+    current_file_id = uploaded_file.name + "_" + str(uploaded_file.size)
+    if "last_file_id" not in st.session_state:
+        st.session_state.last_file_id = None
+    
+    if current_file_id != st.session_state.last_file_id:
+        st.cache_data.clear()
+        st.session_state.filters = []  # limpiamos también los filtros para evitar confusiones
+        st.session_state.last_file_id = current_file_id
 
 if uploaded_file is None:
     st.info("👈 Carga un archivo CSV o Excel para comenzar")
@@ -39,10 +49,8 @@ if uploaded_file is None:
 # Guardar archivo subido temporalmente
 file_extension = os.path.splitext(uploaded_file.name)[1].lower()
 temp_path = f"temp_uploaded{file_extension}"
-
 with open(temp_path, "wb") as f:
     f.write(uploaded_file.getbuffer())
-
 st.sidebar.success(f"Archivo cargado: {uploaded_file.name} ({file_extension[1:].upper()})")
 
 # Leer el archivo según su formato
@@ -103,7 +111,6 @@ with st.sidebar.expander("➕ Agregar filtro"):
         key="f_op_new"
     )
     f_val = st.text_input("Valor", key="f_val_new")
-
     if st.button("Agregar filtro"):
         if f_col and f_val.strip():
             st.session_state.filters.append((f_col, f_op, f_val.strip()))
@@ -137,7 +144,6 @@ metric_op_label = st.sidebar.selectbox(
     ["Conteo", "Suma", "Promedio", "Mínimo", "Máximo"],
     key="metric_op"
 )
-
 agg_map = {
     "Conteo": "count",
     "Suma": "sum",
@@ -151,7 +157,6 @@ agg_func = agg_map[metric_op_label]
 df_calc = df_filtered.copy()
 grouped_df = None
 metric_value = None
-
 if group_col != "— Ninguno —":
     grouped_df = (
         df_calc.groupby(group_col, observed=True)[metric_col]
@@ -205,7 +210,7 @@ else:
 st.subheader("Datos filtrados (columnas seleccionadas)")
 st.dataframe(df_display, use_container_width=True)
 
-# ================= FUNCIONES PDF (sin cambios importantes) =================
+# ================= FUNCIONES PDF =================
 def get_top_15_df(df, group_col, metric_col):
     if df is None or df.empty:
         return None
@@ -217,12 +222,11 @@ def plot_to_png_pdf(df, group_col, metric_op_label):
     df_top = get_top_15_df(df, group_col, metric_op_label)
     if df_top is None:
         return None
-    
+   
     total = len(df)
     titulo = f"{metric_op_label} por {group_col}"
     if total > 15:
         titulo += f" (Top 15 de {total})"
-
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     plt.figure(figsize=(12, 7))
     plt.bar(df_top[group_col].astype(str), df_top[metric_op_label], color=REDROCK_RED)
@@ -260,7 +264,8 @@ def generate_pdf():
     buffer = BytesIO()
     tmp_images = []
     doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
+        buffer, 
+        pagesize=landscape(A4),              # ← Cambio principal: horizontal
         topMargin=2*cm, bottomMargin=2*cm,
         leftMargin=2*cm, rightMargin=2*cm
     )
@@ -268,32 +273,26 @@ def generate_pdf():
     elements = []
     elements.append(Paragraph("R E D R O C K – Reporte de Datos", styles["Title"]))
     elements.append(Spacer(1, 30))
-
     if grouped_df is not None and not grouped_df.empty:
         img_path = plot_to_png_pdf(grouped_df, group_col, metric_op_label)
         if img_path:
             tmp_images.append(img_path)
             elements.append(Paragraph("Análisis Gráfico – Top 15", styles["Heading2"]))
             elements.append(Spacer(1, 12))
-            elements.append(Image(img_path, width=17*cm, height=9*cm))
+            elements.append(Image(img_path, width=22*cm, height=10*cm))  # un poco más ancho
             elements.append(PageBreak())
-
     if grouped_df is not None and not grouped_df.empty:
         top15 = get_top_15_df(grouped_df, group_col, metric_op_label)
         total = len(grouped_df)
         titulo = f"Resultados Agrupados – Top 15 de {total}" if total > 15 else "Resultados Agrupados"
         elements += df_to_table(top15, titulo)
-
     elements += df_to_table(df_display, "Datos Filtrados (columnas visibles)")
-
     doc.build(elements, onFirstPage=footer, onLaterPages=footer)
-
     for img in tmp_images:
         try:
             os.unlink(img)
         except:
             pass
-
     buffer.seek(0)
     return buffer
 
@@ -312,6 +311,7 @@ if st.button("⬇ Generar PDF profesional"):
 # Pie de página
 st.markdown("---")
 st.caption("Desarrollado con Streamlit | Versión 2026 | © Salva Rosales")
+
 
 
 
