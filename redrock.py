@@ -168,15 +168,15 @@ if group_col != "— Ninguno —":
     )
 else:
     s = df_calc[metric_col]
-    if metric_op_label == "Conteo":
+    if metric_op_label == "Count":
         metric_value = int(s.count())
-    elif metric_op_label == "Suma":
+    elif metric_op_label == "Sum":
         metric_value = float(s.sum()) if not s.empty else 0
-    elif metric_op_label == "Promedio":
+    elif metric_op_label == "Mean":
         metric_value = float(s.mean()) if not s.empty else None
-    elif metric_op_label == "Mínimo":
+    elif metric_op_label == "Min":
         metric_value = float(s.min()) if not s.empty else None
-    elif metric_op_label == "Máximo":
+    elif metric_op_label == "Max":
         metric_value = float(s.max()) if not s.empty else None
 
 # ================= VISTA PRINCIPAL =================
@@ -198,13 +198,13 @@ if grouped_df is not None and not grouped_df.empty:
         grouped_df,
         x=group_col,
         y=metric_op_label,
-        title=f"{metric_op_label} por {group_col}",
+        title=f"{metric_op_label} for {group_col}",
         color_discrete_sequence=[REDROCK_RED]
     )
     fig.update_layout(xaxis_tickangle=-45)
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.info("No hay datos agrupados para mostrar gráfico.")
+    st.info("No DATA")
 
 # ================= TABLA FINAL =================
 st.subheader("Filter data")
@@ -311,6 +311,7 @@ if st.button("⬇ Generate PDF"):
 # Pie de página
 st.markdown("---")
 st.caption("Desarrollado con Streamlit | Versión 2026.1 | © Salva Rosales")
+
 
 
 
