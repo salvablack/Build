@@ -17,7 +17,7 @@ from reportlab.lib.units import cm
 # ================= CONFIG =================
 st.set_page_config(page_title="R E D R O C K Technologies", layout="wide")
 st.title("🟥 R E D R O C K")
-st.caption("Data inspection • filtros • métricas • agrupaciones • gráficos y Mucho más...")
+st.caption("Data inspection • filters and more")
 REDROCK_RED = "#FF0000"
 
 # ================= STATE =================
@@ -25,9 +25,9 @@ if "filters" not in st.session_state:
     st.session_state.filters = []
 
 # ================= SIDEBAR =================
-st.sidebar.header("Configuración")
+st.sidebar.header("Settings")
 uploaded_file = st.sidebar.file_uploader(
-    "Cargar archivo (CSV o Excel)",
+    "Load (CSV - Excel)",
     type=["csv", "xlsx", "xls"]
 )
 
@@ -43,7 +43,7 @@ if uploaded_file is not None:
         st.session_state.last_file_id = current_file_id
 
 if uploaded_file is None:
-    st.info("👈 Carga un archivo CSV o Excel para comenzar")
+    st.info("👈 Load File")
     st.stop()
 
 # Guardar archivo subido temporalmente
@@ -61,10 +61,10 @@ def load_data(file_path, ext):
     elif ext in [".xlsx", ".xls"]:
         return pd.read_excel(file_path, engine='openpyxl')
     else:
-        st.error("Formato de archivo no soportado.")
+        st.error("Not Supported")
         st.stop()
 
-with st.spinner("Cargando datos..."):
+with st.spinner("Loading"):
     df = load_data(temp_path, file_extension)
 
 # ================= FILTROS =================
@@ -92,9 +92,9 @@ with st.spinner("Aplicando filtros..."):
     preview_df = df_filtered.copy()
 
 # ================= COLUMN VISIBILITY =================
-st.sidebar.subheader("Columnas visibles")
+st.sidebar.subheader("Columns")
 visible_columns = st.sidebar.multiselect(
-    "Selecciona columnas",
+    "Select",
     options=df_filtered.columns.tolist(),
     default=df_filtered.columns.tolist(),
     key="visible_cols"
@@ -102,8 +102,8 @@ visible_columns = st.sidebar.multiselect(
 df_display = df_filtered[visible_columns].copy()
 
 # ================= FILTROS UI =================
-st.sidebar.subheader("Filtros")
-with st.sidebar.expander("➕ Agregar filtro"):
+st.sidebar.subheader("Filters")
+with st.sidebar.expander("➕ Add filter"):
     f_col = st.selectbox("Columna", df.columns, key="f_col_new")
     f_op = st.selectbox(
         "Operador",
@@ -111,7 +111,7 @@ with st.sidebar.expander("➕ Agregar filtro"):
         key="f_op_new"
     )
     f_val = st.text_input("Valor", key="f_val_new")
-    if st.button("Agregar filtro"):
+    if st.button("Add filter"):
         if f_col and f_val.strip():
             st.session_state.filters.append((f_col, f_op, f_val.strip()))
             st.rerun()
@@ -119,7 +119,7 @@ with st.sidebar.expander("➕ Agregar filtro"):
             st.sidebar.warning("Completa columna y valor")
 
 if st.session_state.filters:
-    st.sidebar.markdown("### Filtros activos")
+    st.sidebar.markdown("### Active filters")
     for i, (col, op, val) in enumerate(st.session_state.filters):
         c1, c2 = st.sidebar.columns([5, 1])
         c1.write(f"{i+1}. **{col}** {op} *{val}*")
@@ -128,7 +128,7 @@ if st.session_state.filters:
             st.rerun()
 
 # ================= ANÁLISIS =================
-st.sidebar.subheader("Análisis")
+st.sidebar.subheader("Analize")
 group_col = st.sidebar.selectbox(
     "Agrupar por",
     ["— Ninguno —"] + df_filtered.columns.tolist(),
@@ -141,15 +141,15 @@ metric_col = st.sidebar.selectbox(
 )
 metric_op_label = st.sidebar.selectbox(
     "Operación",
-    ["Conteo", "Suma", "Promedio", "Mínimo", "Máximo"],
+    ["Count", "Sum", "Mean", "Min", "Max"],
     key="metric_op"
 )
 agg_map = {
-    "Conteo": "count",
-    "Suma": "sum",
-    "Promedio": "mean",
-    "Mínimo": "min",
-    "Máximo": "max"
+    "Count": "count",
+    "Sum": "sum",
+    "Mean": "mean",
+    "Min": "min",
+    "Max": "max"
 }
 agg_func = agg_map[metric_op_label]
 
@@ -180,19 +180,19 @@ else:
         metric_value = float(s.max()) if not s.empty else None
 
 # ================= VISTA PRINCIPAL =================
-st.subheader("Vista previa (primeras 10 filas)")
+st.subheader("Preview (First 10 rows)")
 st.dataframe(preview_df.head(10), use_container_width=True)
 
-st.subheader("Resultado")
+st.subheader("Result")
 if grouped_df is not None and not grouped_df.empty:
     st.dataframe(grouped_df, use_container_width=True)
 elif metric_value is not None:
     st.metric(metric_op_label, f"{metric_value:,.2f}" if isinstance(metric_value, float) else metric_value)
 else:
-    st.info("Selecciona una operación y columna para ver resultados.")
+    st.info("Select columns.")
 
 # ================= GRÁFICO =================
-st.subheader("Gráfico")
+st.subheader("Graph")
 if grouped_df is not None and not grouped_df.empty:
     fig = px.bar(
         grouped_df,
@@ -207,7 +207,7 @@ else:
     st.info("No hay datos agrupados para mostrar gráfico.")
 
 # ================= TABLA FINAL =================
-st.subheader("Datos filtrados (columnas seleccionadas)")
+st.subheader("Filter data")
 st.dataframe(df_display, use_container_width=True)
 
 # ================= FUNCIONES PDF =================
@@ -226,7 +226,7 @@ def plot_to_png_pdf(df, group_col, metric_op_label):
     total = len(df)
     titulo = f"{metric_op_label} por {group_col}"
     if total > 15:
-        titulo += f" (Top 15 de {total})"
+        titulo += f" (Top  {total})"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     plt.figure(figsize=(12, 7))
     plt.bar(df_top[group_col].astype(str), df_top[metric_op_label], color=REDROCK_RED)
@@ -271,22 +271,22 @@ def generate_pdf():
     )
     styles = getSampleStyleSheet()
     elements = []
-    elements.append(Paragraph("R E D R O C K – Reporte de Datos", styles["Title"]))
+    elements.append(Paragraph("R E D R O C K – Report", styles["Title"]))
     elements.append(Spacer(1, 30))
     if grouped_df is not None and not grouped_df.empty:
         img_path = plot_to_png_pdf(grouped_df, group_col, metric_op_label)
         if img_path:
             tmp_images.append(img_path)
-            elements.append(Paragraph("Análisis Gráfico – Top 15", styles["Heading2"]))
+            elements.append(Paragraph("Analize", styles["Heading2"]))
             elements.append(Spacer(1, 12))
             elements.append(Image(img_path, width=22*cm, height=10*cm))  # un poco más ancho
             elements.append(PageBreak())
     if grouped_df is not None and not grouped_df.empty:
         top15 = get_top_15_df(grouped_df, group_col, metric_op_label)
         total = len(grouped_df)
-        titulo = f"Resultados Agrupados – Top 15 de {total}" if total > 15 else "Resultados Agrupados"
+        titulo = f"Grouped – Top 15 of {total}" if total > 15 else "Grouped"
         elements += df_to_table(top15, titulo)
-    elements += df_to_table(df_display, "Datos Filtrados (columnas visibles)")
+    elements += df_to_table(df_display, "Filter data")
     doc.build(elements, onFirstPage=footer, onLaterPages=footer)
     for img in tmp_images:
         try:
@@ -297,12 +297,12 @@ def generate_pdf():
     return buffer
 
 # ================= EXPORTAR =================
-st.subheader("Exportar")
-if st.button("⬇ Generar PDF profesional"):
-    with st.spinner("Creando PDF..."):
+st.subheader("Export")
+if st.button("⬇ Generate PDF"):
+    with st.spinner("Creating PDF..."):
         pdf_buffer = generate_pdf()
     st.download_button(
-        label="Descargar PDF",
+        label="Download PDF",
         data=pdf_buffer,
         file_name="redrock_reporte.pdf",
         mime="application/pdf"
@@ -311,6 +311,7 @@ if st.button("⬇ Generar PDF profesional"):
 # Pie de página
 st.markdown("---")
 st.caption("Desarrollado con Streamlit | Versión 2026.1 | © Salva Rosales")
+
 
 
 
