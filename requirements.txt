@@ -1,8 +1,10 @@
+
 streamlit
 pandas
+openpyxl
 plotly
 matplotlib
-openpyxl
+kaleido==0.2.1
 reportlab
 
 
